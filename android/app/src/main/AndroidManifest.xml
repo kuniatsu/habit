@@ -67,6 +67,11 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
         </intent>
+        <!-- 遷移先候補としてランチャーアプリ一覧を取得するため(installed_apps) -->
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent>
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="line"/>

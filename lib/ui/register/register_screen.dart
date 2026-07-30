@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/frequency.dart';
+import '../../services/app_catalog.dart';
+import '../../services/link_target.dart';
 import '../../state/habit_store.dart';
 import 'habit_presets.dart';
+
+/// 遷移先の種類。
+enum LinkType { none, app, web }
 
 /// habitの登録画面。
 /// [preset] が渡されたらその内容を初期値にする。nullならカスタムhabit。
@@ -20,13 +25,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _titleController;
   late final TextEditingController _messageController;
-  late final TextEditingController _deepLinkController;
+  late final TextEditingController _webUrlController;
 
   late Frequency _frequency;
   TimeOfDay _time = const TimeOfDay(hour: 9, minute: 0);
   int _minute = 0;
   int _weekday = DateTime.monday;
   int _dayOfMonth = 1;
+  LinkType _linkType = LinkType.none;
+  LinkTarget? _selectedApp;
   bool _saving = false;
 
   @override
@@ -35,17 +42,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final preset = widget.preset;
     _titleController = TextEditingController(text: preset?.title ?? '');
     _messageController = TextEditingController(text: preset?.message ?? '');
-    _deepLinkController =
-        TextEditingController(text: preset?.deepLinkUrl ?? '');
+    _webUrlController = TextEditingController();
     _frequency = preset?.frequency ?? Frequency.daily;
+
+    final presetUrl = preset?.deepLinkUrl;
+    if (presetUrl != null) {
+      _linkType = LinkType.app;
+      _selectedApp = LinkTarget(label: labelForUrl(presetUrl), url: presetUrl);
+    }
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _messageController.dispose();
-    _deepLinkController.dispose();
+    _webUrlController.dispose();
     super.dispose();
+  }
+
+  String? get _deepLinkUrl {
+    switch (_linkType) {
+      case LinkType.none:
+        return null;
+      case LinkType.app:
+        return _selectedApp?.url;
+      case LinkType.web:
+        return _webUrlController.text.trim();
+    }
+  }
+
+  Future<void> _pickApp() async {
+    final catalog = context.read<AppCatalog>();
+    final selected = await showModalBottomSheet<LinkTarget>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _AppPickerSheet(targetsFuture: catalog.listTargets()),
+    );
+    if (selected != null) {
+      setState(() => _selectedApp = selected);
+    }
   }
 
   Future<void> _pickTime() async {
@@ -69,7 +104,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             hour: _time.hour,
             weekday: _weekday,
             dayOfMonth: _dayOfMonth,
-            deepLinkUrl: _deepLinkController.text,
+            deepLinkUrl: _deepLinkUrl,
           );
       if (mounted) {
         Navigator.of(context).pop();
@@ -131,21 +166,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
             const SizedBox(height: 16),
             ..._buildScheduleFields(),
             const SizedBox(height: 24),
-            TextFormField(
-              controller: _deepLinkController,
-              decoration: const InputDecoration(
-                labelText: '遷移先アプリ(任意)',
-                hintText: '例: line://',
-                helperText: '実施開始で開くディープリンクURL',
-              ),
-              validator: (value) {
-                final text = value?.trim() ?? '';
-                if (text.isEmpty) {
-                  return null;
-                }
-                return text.contains('://') ? null : 'URL形式(例: line://)で入力してください';
-              },
+            Text('実施開始で開く遷移先(任意)',
+                style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            SegmentedButton<LinkType>(
+              segments: const [
+                ButtonSegment(value: LinkType.none, label: Text('なし')),
+                ButtonSegment(value: LinkType.app, label: Text('アプリ')),
+                ButtonSegment(value: LinkType.web, label: Text('Webサイト')),
+              ],
+              selected: {_linkType},
+              onSelectionChanged: (selection) =>
+                  setState(() => _linkType = selection.first),
             ),
+            const SizedBox(height: 12),
+            ..._buildLinkFields(),
             const SizedBox(height: 32),
             FilledButton(
               onPressed: _saving ? null : _save,
@@ -155,6 +190,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       ),
     );
+  }
+
+  List<Widget> _buildLinkFields() {
+    switch (_linkType) {
+      case LinkType.none:
+        return [];
+      case LinkType.app:
+        return [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.apps),
+            title: Text(_selectedApp?.label ?? 'アプリを選ぶ'),
+            subtitle: _selectedApp == null ? const Text('タップして一覧から選択') : null,
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _pickApp,
+          ),
+        ];
+      case LinkType.web:
+        return [
+          TextFormField(
+            controller: _webUrlController,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(
+              labelText: 'WebサイトのURL',
+              hintText: '例: https://example.com',
+            ),
+            validator: (value) {
+              if (_linkType != LinkType.web) {
+                return null;
+              }
+              final text = value?.trim() ?? '';
+              if (text.isEmpty) {
+                return 'URLを入力してください';
+              }
+              final uri = Uri.tryParse(text);
+              final valid = uri != null &&
+                  (uri.scheme == 'http' || uri.scheme == 'https') &&
+                  uri.host.isNotEmpty;
+              return valid ? null : 'http(s)://で始まるURLを入力してください';
+            },
+          ),
+        ];
+    }
   }
 
   List<Widget> _buildScheduleFields() {
@@ -248,6 +326,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 遷移先アプリを一覧から選ぶボトムシート。
+class _AppPickerSheet extends StatelessWidget {
+  final Future<List<LinkTarget>> targetsFuture;
+
+  const _AppPickerSheet({required this.targetsFuture});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.6,
+      child: FutureBuilder<List<LinkTarget>>(
+        future: targetsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final targets = snapshot.data ?? famousAppTargets;
+          if (targets.isEmpty) {
+            return const Center(child: Text('選べるアプリが見つかりません'));
+          }
+          return ListView.builder(
+            itemCount: targets.length,
+            itemBuilder: (context, index) {
+              final target = targets[index];
+              return ListTile(
+                leading: const Icon(Icons.apps),
+                title: Text(target.label),
+                onTap: () => Navigator.of(context).pop(target),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

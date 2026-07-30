@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app.dart';
 import 'data/habit_log_repository.dart';
 import 'data/habit_repository.dart';
+import 'services/app_catalog.dart';
 import 'services/local_notification_scheduler.dart';
 import 'services/notification_scheduler.dart';
 import 'state/habit_store.dart';
@@ -30,5 +31,5 @@ Future<void> main() async {
   await scheduler.initialize();
   await store.load();
 
-  runApp(HabitApp(store: store));
+  runApp(HabitApp(store: store, appCatalog: const DeviceAppCatalog()));
 }

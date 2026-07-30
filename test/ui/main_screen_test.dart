@@ -85,6 +85,14 @@ Future<void> pumpApp(WidgetTester tester, HabitStore store) async {
   await tester.pumpWidget(HabitApp(store: store));
 }
 
+/// 画面外(キャッシュ領域)にあるウィジェットを確実に表示してからタップする。
+Future<void> revealAndTap(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('フッターメニュー', () {
     testWidgets('TOP/登録/履歴の3ボタンが並ぶ', (tester) async {
@@ -163,10 +171,7 @@ void main() {
       expect(find.text('habitを登録'), findsOneWidget);
       expect(find.text('5分ストレッチ'), findsOneWidget);
 
-      await tester.scrollUntilVisible(find.text('登録する'), 200,
-          scrollable: find.byType(Scrollable).last);
-      await tester.tap(find.text('登録する'));
-      await tester.pumpAndSettle();
+      await revealAndTap(tester, find.text('登録する'));
 
       expect(store.habits.length, 1);
       expect(store.habits.first.title, '5分ストレッチ');
@@ -188,13 +193,91 @@ void main() {
 
       expect(find.text('カスタムhabit'), findsOneWidget); // AppBarタイトル
 
-      await tester.scrollUntilVisible(find.text('登録する'), 200,
-          scrollable: find.byType(Scrollable).last);
-      await tester.tap(find.text('登録する'));
-      await tester.pumpAndSettle();
+      await revealAndTap(tester, find.text('登録する'));
 
       expect(find.text('タイトルを入力してください'), findsOneWidget);
       expect(store.habits, isEmpty);
+    });
+  });
+
+  group('遷移先の設定', () {
+    Future<void> openCustomRegister(WidgetTester tester) async {
+      await tester.tap(find.text('登録'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('カスタムhabit'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('「アプリ」を選ぶと一覧から選択でき、選んだアプリ名が表示される', (tester) async {
+      await pumpApp(tester, buildStore());
+      await openCustomRegister(tester);
+
+      await revealAndTap(tester, find.text('アプリ'));
+
+      await tester.tap(find.text('アプリを選ぶ'));
+      await tester.pumpAndSettle();
+
+      // FamousAppCatalog(テスト環境のフォールバック)の一覧が出る
+      expect(find.text('LINE'), findsOneWidget);
+      await tester.tap(find.text('LINE'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('LINE'), findsOneWidget);
+      expect(find.text('アプリを選ぶ'), findsNothing);
+    });
+
+    testWidgets('「Webサイト」は不正なURLだと登録できない', (tester) async {
+      final store = buildStore();
+      await pumpApp(tester, store);
+      await openCustomRegister(tester);
+
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'タイトル'), 'ニュースを読む');
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'アラートメッセージ'), '今日の一番の見出しは？');
+
+      await revealAndTap(tester, find.text('Webサイト'));
+
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'WebサイトのURL'), 'ただの文字列');
+      await revealAndTap(tester, find.text('登録する'));
+
+      expect(find.text('http(s)://で始まるURLを入力してください'), findsOneWidget);
+      expect(store.habits, isEmpty);
+    });
+
+    testWidgets('「Webサイト」で正しいURLなら登録され、URLが保存される', (tester) async {
+      final store = buildStore();
+      await pumpApp(tester, store);
+      await openCustomRegister(tester);
+
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'タイトル'), 'ニュースを読む');
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'アラートメッセージ'), '今日の一番の見出しは？');
+
+      await revealAndTap(tester, find.text('Webサイト'));
+
+      await tester.enterText(find.widgetWithText(TextFormField, 'WebサイトのURL'),
+          'https://news.example.com');
+      await revealAndTap(tester, find.text('登録する'));
+
+      expect(store.habits.length, 1);
+      expect(store.habits.first.deepLinkUrl, 'https://news.example.com');
+    });
+
+    testWidgets('プリセットの遷移先はアプリとして初期表示される', (tester) async {
+      await pumpApp(tester, buildStore());
+
+      await tester.tap(find.text('登録'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('久しぶりの友人への連絡'));
+      await tester.pumpAndSettle();
+
+      // line:// → LINE ラベルで表示される
+      await tester.scrollUntilVisible(find.text('LINE'), 200,
+          scrollable: find.byType(Scrollable).last);
+      expect(find.text('LINE'), findsOneWidget);
     });
   });
 
