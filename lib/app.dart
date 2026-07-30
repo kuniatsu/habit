@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'state/habit_store.dart';
-import 'ui/home/home_screen.dart';
+import 'ui/main_screen.dart';
 
 /// アプリのルートウィジェット。UIは限りなくシンプルに。
 class HabitApp extends StatelessWidget {
@@ -20,7 +20,7 @@ class HabitApp extends StatelessWidget {
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
           useMaterial3: true,
         ),
-        home: const HomeScreen(),
+        home: const MainScreen(),
       ),
     );
   }

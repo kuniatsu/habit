@@ -6,8 +6,11 @@ import '../../state/habit_store.dart';
 import 'habit_presets.dart';
 
 /// habitの登録画面。
+/// [preset] が渡されたらその内容を初期値にする。nullならカスタムhabit。
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  final HabitPreset? preset;
+
+  const RegisterScreen({super.key, this.preset});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -15,11 +18,11 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _titleController = TextEditingController();
-  final _messageController = TextEditingController();
-  final _deepLinkController = TextEditingController();
+  late final TextEditingController _titleController;
+  late final TextEditingController _messageController;
+  late final TextEditingController _deepLinkController;
 
-  Frequency _frequency = Frequency.daily;
+  late Frequency _frequency;
   TimeOfDay _time = const TimeOfDay(hour: 9, minute: 0);
   int _minute = 0;
   int _weekday = DateTime.monday;
@@ -27,20 +30,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _saving = false;
 
   @override
+  void initState() {
+    super.initState();
+    final preset = widget.preset;
+    _titleController = TextEditingController(text: preset?.title ?? '');
+    _messageController = TextEditingController(text: preset?.message ?? '');
+    _deepLinkController =
+        TextEditingController(text: preset?.deepLinkUrl ?? '');
+    _frequency = preset?.frequency ?? Frequency.daily;
+  }
+
+  @override
   void dispose() {
     _titleController.dispose();
     _messageController.dispose();
     _deepLinkController.dispose();
     super.dispose();
-  }
-
-  void _applyPreset(HabitPreset preset) {
-    setState(() {
-      _titleController.text = preset.title;
-      _messageController.text = preset.message;
-      _deepLinkController.text = preset.deepLinkUrl ?? '';
-      _frequency = preset.frequency;
-    });
   }
 
   Future<void> _pickTime() async {
@@ -82,27 +87,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('habitを登録')),
+      appBar: AppBar(
+        title: Text(widget.preset == null ? 'カスタムhabit' : 'habitを登録'),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text('人を幸せにするhabit',
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                for (final preset in habitPresets)
-                  ActionChip(
-                    label: Text(preset.title),
-                    onPressed: () => _applyPreset(preset),
-                  ),
-              ],
-            ),
-            const Divider(height: 32),
             TextFormField(
               controller: _titleController,
               decoration: const InputDecoration(
